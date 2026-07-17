@@ -439,13 +439,13 @@ function HomeScreen({ stats, historyList, onStartWorkout, activeAvatar }) {
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="p-2 rounded-lg" style={{ background: "rgba(255,255,255,0.04)" }}>
+                <div className="p-2 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
                   <p className="font-label-caps" style={{ fontSize: 9, color: C.onVariant }}>DURATION</p>
-                  <p className="font-headline-md" style={{ color: C.primary }}>{lastSession.duration_seconds}s</p>
+                  <p className="font-headline-md truncate" style={{ color: C.primary }}>{Math.round(lastSession.duration_seconds)}s</p>
                 </div>
-                <div className="p-2 rounded-lg" style={{ background: "rgba(255,255,255,0.04)" }}>
+                <div className="p-2 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
                   <p className="font-label-caps" style={{ fontSize: 9, color: C.onVariant }}>CALORIES</p>
-                  <p className="font-headline-md" style={{ color: C.primary }}>{lastSession.calories_burned}</p>
+                  <p className="font-headline-md truncate" style={{ color: C.primary }}>{Math.round(lastSession.calories_burned)}</p>
                 </div>
               </div>
             </>
