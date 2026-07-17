@@ -1289,9 +1289,15 @@ export default function App() {
     anglesRef.current=[]; wristPositionsRef.current=[];
     durationRef.current=0; lastTimeRef.current=performance.now();
     consecutiveLostFramesRef.current=0; setNoPoseWarning(false); recentFramesRef.current=[];
-    await startCamera();
     setScreen("live");
   };
+
+  // Start camera automatically when entering live screen
+  useEffect(() => {
+    if (screen === "live") {
+      startCamera();
+    }
+  }, [screen]);
 
   const handleStopSession = async () => {
     setIsActive(false);
