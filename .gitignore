@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+venv/
+env/
+
+# Model cache / training artifacts (large files)
+poses_cache/
+pose_landmarker.task
+
+# Raw video dataset (too large for git)
+push-up/
+pull Up/
+squat/
+russian twist/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.npm
+
+# Database
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Stitch design export (optional - uncomment to exclude)
+# stitch_burn_ex_calorie_tracking_interface/
