@@ -588,6 +588,7 @@ function LiveWorkoutScreen({
   videoRef, canvasRef,
   mismatchPaused, detectedExercise, detectionConfidence,
   onMismatchSwitch, onMismatchIgnore,
+  debugRoms, // new prop containing { elbow, knee, torso, detected }
 }) {
   const pct = Math.min(100, Math.max(8,
     ((Math.min(1, rom / 80) * 0.5 + Math.min(1, avgSpeed / 0.03) * 0.35 + (reps >= 5 ? 0.15 : reps >= 2 ? 0.07 : 0)) * 100)
@@ -607,6 +608,16 @@ function LiveWorkoutScreen({
 
       {/* Vignette overlay */}
       <div className="absolute inset-0 camera-vignette pointer-events-none" />
+
+      {/* DEBUG HUD */}
+      {debugRoms && (
+        <div className="absolute top-24 left-5 z-50 p-2 rounded bg-black/50 text-white font-mono text-xs border border-white/20 pointer-events-none">
+          <div>Elbow: {Math.round(debugRoms.elbow)}°</div>
+          <div>Knee: {Math.round(debugRoms.knee)}°</div>
+          <div>Torso: {Math.round(debugRoms.torso)}°</div>
+          <div className="text-[#00f5ff]">Detected: {debugRoms.detected || "None"}</div>
+        </div>
+      )}
 
       {/* ── Exercise Mismatch Overlay ── */}
       <AnimatePresence>
@@ -1375,6 +1386,8 @@ export default function App() {
     });
   };
 
+  const [debugRoms, setDebugRoms] = useState(null);
+
   // Helper to compute ROM from angle array
   const romOf = (arr) => arr.length > 1 ? Math.max(...arr) - Math.min(...arr) : 0;
 
@@ -1407,6 +1420,8 @@ export default function App() {
             conf = Math.min(0.90, 0.5 + (elbowRom - 30) / 120);
           }
         }
+
+        setDebugRoms({ elbow: elbowRom, knee: kneeRom, torso: torsoRom, detected });
 
         // Only trigger mismatch if confidence is high enough and it doesn't match selection
         if (detected && conf >= 0.45 && detected !== exercise) {
@@ -1571,6 +1586,7 @@ export default function App() {
             setMismatchPaused(false); 
           }}
           onMismatchIgnore={() => setMismatchPaused(false)}
+          debugRoms={debugRoms}
         />
       )}
 
