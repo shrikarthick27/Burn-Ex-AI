@@ -19,6 +19,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
             exercise_type TEXT NOT NULL,
+            detected_exercise TEXT,
             reps INTEGER NOT NULL,
             avg_speed REAL NOT NULL,
             range_of_motion REAL NOT NULL,
@@ -27,6 +28,12 @@ def init_db():
             calories_burned REAL NOT NULL
         )
     """)
+    
+    # Try to add column if it doesn't exist (migration)
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN detected_exercise TEXT")
+    except sqlite3.OperationalError:
+        pass # Column likely already exists
     
     # Streaks Table
     cursor.execute("""
@@ -46,15 +53,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_session(exercise_type, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned):
+def add_session(exercise_type, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned, detected_exercise=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     
     now_str = datetime.now().isoformat()
     cursor.execute("""
-        INSERT INTO sessions (timestamp, exercise_type, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (now_str, exercise_type, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned))
+        INSERT INTO sessions (timestamp, exercise_type, detected_exercise, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (now_str, exercise_type, detected_exercise, reps, avg_speed, range_of_motion, duration_seconds, weight_kg, calories_burned))
     
     # Update Streak
     today_str = date.today().isoformat()
@@ -149,6 +156,7 @@ def get_all_sessions():
             "id": r["id"],
             "timestamp": r["timestamp"],
             "exercise_type": r["exercise_type"],
+            "detected_exercise": r["detected_exercise"],
             "reps": r["reps"],
             "avg_speed": r["avg_speed"],
             "range_of_motion": r["range_of_motion"],

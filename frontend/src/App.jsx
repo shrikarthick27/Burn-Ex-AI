@@ -584,6 +584,8 @@ function LiveWorkoutScreen({
   exercise, reps, rom, duration, caloriesLow, caloriesHigh, confidence, isFallback,
   avgSpeed, noPoseWarning, showSkeleton, onToggleSkeleton, onStop,
   videoRef, canvasRef,
+  mismatchPaused, detectedExercise, detectionConfidence,
+  onMismatchSwitch, onMismatchIgnore,
 }) {
   const pct = Math.min(100, Math.max(8,
     ((Math.min(1, rom / 80) * 0.5 + Math.min(1, avgSpeed / 0.03) * 0.35 + (reps >= 5 ? 0.15 : reps >= 2 ? 0.07 : 0)) * 100)
@@ -591,6 +593,8 @@ function LiveWorkoutScreen({
   const mins = Math.floor(duration / 60);
   const secs = Math.floor(duration % 60);
   const timeStr = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  const detectedLabel = EXERCISE_LABELS[detectedExercise] || detectedExercise;
+  const selectedLabel = EXERCISE_LABELS[exercise] || exercise;
 
   return (
     <div className="fixed inset-0 z-40 overflow-hidden" style={{ background: "#000" }}>
@@ -601,6 +605,71 @@ function LiveWorkoutScreen({
 
       {/* Vignette overlay */}
       <div className="absolute inset-0 camera-vignette pointer-events-none" />
+
+      {/* ── Exercise Mismatch Overlay ── */}
+      <AnimatePresence>
+        {mismatchPaused && detectedExercise && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 flex items-center justify-center p-6"
+            style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(12px)" }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-sm rounded-3xl p-6 space-y-5"
+              style={{ background: C.sc, border: "2px solid rgba(251,191,36,0.5)", boxShadow: "0 0 60px rgba(251,191,36,0.15)" }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                  style={{ background: "rgba(251,191,36,0.15)" }}>
+                  <MatIcon name="warning" fill style={{ fontSize: 28, color: "#fbbf24" }} />
+                </div>
+                <div>
+                  <p className="font-headline-md" style={{ fontSize: 16, color: "#fbbf24" }}>Exercise Mismatch</p>
+                  <p className="font-label-caps" style={{ fontSize: 10, color: C.onVariant }}>CALORIE ESTIMATION PAUSED</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl p-4 space-y-2" style={{ background: C.scHighest }}>
+                <div className="flex items-center justify-between">
+                  <span className="font-label-caps" style={{ fontSize: 10, color: C.onVariant }}>SELECTED</span>
+                  <span className="font-headline-md px-3 py-1 rounded-lg"
+                    style={{ fontSize: 14, color: C.onSurface, border: `1px solid ${C.outline}` }}>{selectedLabel}</span>
+                </div>
+                <div className="flex items-center justify-center">
+                  <MatIcon name="swap_vert" style={{ fontSize: 20, color: "#fbbf24" }} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-label-caps" style={{ fontSize: 10, color: C.onVariant }}>DETECTED</span>
+                  <span className="font-headline-md px-3 py-1 rounded-lg"
+                    style={{ fontSize: 14, color: C.primary, border: "1px solid rgba(99,247,255,0.3)", background: "rgba(99,247,255,0.08)" }}>{detectedLabel}</span>
+                </div>
+                <p className="font-label-caps text-center pt-1" style={{ fontSize: 9, color: C.onVariant }}>
+                  {Math.round((detectionConfidence || 0) * 100)}% classifier confidence
+                </p>
+              </div>
+
+              <p className="font-body-md" style={{ fontSize: 13, color: C.onVariant, lineHeight: 1.6 }}>
+                AI detected motion matching <strong style={{ color: C.primary }}>{detectedLabel}</strong>, not {selectedLabel}. Wrong exercise logic = inaccurate calorie estimate.
+              </p>
+
+              <div className="space-y-2">
+                <button onClick={() => onMismatchSwitch(detectedExercise)}
+                  className="w-full py-3.5 rounded-xl font-headline-md active-scale flex items-center justify-center gap-2"
+                  style={{ background: C.primaryCont, color: C.onPrimary }}>
+                  <MatIcon name="check_circle" fill style={{ fontSize: 20 }} />
+                  Switch to {detectedLabel}
+                </button>
+                <button onClick={onMismatchIgnore}
+                  className="w-full py-3 rounded-xl font-label-caps active-scale"
+                  style={{ background: C.scHighest, color: C.onVariant }}>
+                  Keep {selectedLabel} &amp; Continue
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Top bar */}
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-5 py-4">
@@ -838,6 +907,17 @@ function SessionSummaryScreen({ summary, onDismiss }) {
             </div>
           )}
 
+          {/* Detected exercise note */}
+          {summary.detected_exercise && summary.detected_exercise !== summary.selected_exercise && (
+            <div className="rounded-xl px-4 py-3 flex items-center gap-3"
+              style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)" }}>
+              <MatIcon name="manage_search" style={{ fontSize: 20, color: "#fbbf24", flexShrink: 0 }} />
+              <p className="font-label-caps" style={{ fontSize: 10, color: "#fbbf24", lineHeight: 1.5 }}>
+                AI detected <strong>{EXERCISE_LABELS[summary.detected_exercise] || summary.detected_exercise}</strong> but session was logged as <strong>{EXERCISE_LABELS[summary.selected_exercise] || summary.selected_exercise}</strong>. This mismatch has been saved for review.
+              </p>
+            </div>
+          )}
+
           <button onClick={onDismiss}
             className="w-full py-4 rounded-xl font-headline-md active-scale flex items-center justify-center gap-2 btn-shadow-teal"
             style={{ background: C.primaryCont, color: C.onPrimary }}>
@@ -932,6 +1012,13 @@ function HistoryScreen({ historyList, stats, onDelete, deleteConfirm, setDeleteC
                         {EXERCISE_LABELS[s.exercise_type] || s.exercise_type}
                       </span>
                       <span className="px-2 py-0.5 rounded-full font-label-caps" style={{ fontSize: 9, ...style }}>{label}</span>
+                      {s.detected_exercise && s.detected_exercise !== s.exercise_type && (
+                        <span className="px-2 py-0.5 rounded-full font-label-caps flex items-center gap-1"
+                          style={{ fontSize: 9, background: "rgba(251,191,36,0.12)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.3)" }}>
+                          <MatIcon name="warning" style={{ fontSize: 11 }} />
+                          Mismatch
+                        </span>
+                      )}
                     </div>
                     <p style={{ color: C.onVariant, fontSize: 12 }}>
                       {new Date(s.timestamp).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
@@ -1085,6 +1172,11 @@ export default function App() {
   const [caloriesHigh, setCaloriesHigh] = useState(0.0);
   const [confidence, setConfidence] = useState("Low");
   const [isFallback, setIsFallback] = useState(false);
+  const [detectedExercise, setDetectedExercise] = useState(null);
+  const [detectionConfidence, setDetectionConfidence] = useState(0);
+  const [mismatchPaused, setMismatchPaused] = useState(false);
+  const mismatchPausedRef = useRef(false);
+  useEffect(() => { mismatchPausedRef.current = mismatchPaused; }, [mismatchPaused]);
 
   // Stats + history
   const [stats, setStats] = useState({ total_sessions: 0, total_calories: 0, total_reps: 0, current_streak: 0, max_streak: 0 });
@@ -1214,8 +1306,13 @@ export default function App() {
 
     if (isActiveRef.current) {
       const now = performance.now();
-      if (lastTimeRef.current > 0) { durationRef.current += (now - lastTimeRef.current)/1000; setDuration(Number(durationRef.current.toFixed(1))); }
-      lastTimeRef.current = now;
+      // Only tick duration if not mismatch-paused
+      if (!mismatchPausedRef.current) {
+        if (lastTimeRef.current > 0) { durationRef.current += (now - lastTimeRef.current)/1000; setDuration(Number(durationRef.current.toFixed(1))); }
+        lastTimeRef.current = now;
+      } else {
+        lastTimeRef.current = now; // keep reference fresh so there's no jump when resumed
+      }
       const [i0,i1,i2] = EXERCISE_JOINT_MAP[exerciseRef.current];
       const p1=lm[i0],p2=lm[i1],p3=lm[i2];
       if (p1&&p2&&p3&&p1.visibility>0.5&&p2.visibility>0.5&&p3.visibility>0.5) {
@@ -1252,7 +1349,7 @@ export default function App() {
     });
   };
 
-  // Live calorie update
+  // Live calorie update + exercise mismatch detection
   useEffect(() => {
     let iv;
     if (isActive && duration >= 30) {
@@ -1260,18 +1357,29 @@ export default function App() {
         try {
           const r = await fetch("http://localhost:5000/api/predict", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reps, avg_speed: avgSpeed, range_of_motion: rom, duration_seconds: duration, weight_kg: weight, tracking_quality: trackingQualityRef.current }),
+            body: JSON.stringify({ exercise_type: exercise, reps, avg_speed: avgSpeed, range_of_motion: rom, duration_seconds: duration, weight_kg: weight, tracking_quality: trackingQualityRef.current }),
           });
           if (r.ok) {
             const d = await r.json();
-            setCalories(d.calories); setCaloriesLow(d.calories_low??d.calories); setCaloriesHigh(d.calories_high??d.calories);
-            setConfidence(d.confidence??"Low"); setIsFallback(d.is_fallback||false);
+            // Only update calories if not currently paused on a mismatch
+            if (!mismatchPausedRef.current) {
+              setCalories(d.calories); setCaloriesLow(d.calories_low??d.calories); setCaloriesHigh(d.calories_high??d.calories);
+              setConfidence(d.confidence??"Low"); setIsFallback(d.is_fallback||false);
+            }
+            // Mismatch detection — requires >60% classifier confidence
+            const detected = d.detected_exercise;
+            const confScore = d.detection_confidence ?? 0;
+            setDetectedExercise(detected);
+            setDetectionConfidence(confScore);
+            if (detected && confScore >= 0.6 && detected !== exercise) {
+              setMismatchPaused(true);
+            }
           }
         } catch { }
       }, 3000);
     }
     return () => clearInterval(iv);
-  }, [isActive, duration, reps, avgSpeed, rom, weight]);
+  }, [isActive, duration, reps, avgSpeed, rom, weight, exercise]);
 
   const generateInsight = (sessionReps, sessionRom, sessionSpeed, sessionDuration, conf) => {
     if (sessionReps < 2) return "Very few reps detected — make sure your full body is visible to the camera next time.";
@@ -1286,6 +1394,7 @@ export default function App() {
     setIsActive(true);
     setReps(0); setAvgSpeed(0); setRom(0); setDuration(0); setCalories(0);
     setCaloriesLow(0); setCaloriesHigh(0); setConfidence("Low"); setIsFallback(false);
+    setDetectedExercise(null); setDetectionConfidence(0); setMismatchPaused(false);
     anglesRef.current=[]; wristPositionsRef.current=[];
     durationRef.current=0; lastTimeRef.current=performance.now();
     consecutiveLostFramesRef.current=0; setNoPoseWarning(false); recentFramesRef.current=[];
@@ -1323,12 +1432,13 @@ export default function App() {
     }
 
     const insight = generateInsight(reps, rom, avgSpeed, durationRef.current, fConf);
-    setSessionSummary({ calories_low: fLow, calories_high: fHigh, confidence: fConf, reps, rom, duration: durationRef.current, insight, is_fallback: fFallback, uncertainty_driver: fDriver });
+    const finalDetected = detectedExercise;
+    setSessionSummary({ calories_low: fLow, calories_high: fHigh, confidence: fConf, reps, rom, duration: durationRef.current, insight, is_fallback: fFallback, uncertainty_driver: fDriver, detected_exercise: finalDetected, selected_exercise: exercise });
 
     try {
       const sr = await fetch("http://localhost:5000/api/session", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ exercise_type: exercise, reps, avg_speed: avgSpeed, range_of_motion: rom, duration_seconds: durationRef.current, weight_kg: weight, calories_burned: fCal }),
+        body: JSON.stringify({ exercise_type: exercise, reps, avg_speed: avgSpeed, range_of_motion: rom, duration_seconds: durationRef.current, weight_kg: weight, calories_burned: fCal, detected_exercise: finalDetected }),
       });
       if (sr.ok) {
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.65 }, colors: ["#63f7ff","#00f5ff","#ffffff","#ffb59e"] });
@@ -1390,6 +1500,11 @@ export default function App() {
           onToggleSkeleton={() => setShowSkeleton(s => !s)}
           onStop={handleStopSession}
           videoRef={videoRef} canvasRef={canvasRef}
+          mismatchPaused={mismatchPaused}
+          detectedExercise={detectedExercise}
+          detectionConfidence={detectionConfidence}
+          onMismatchSwitch={(ex) => { setExercise(ex); setMismatchPaused(false); }}
+          onMismatchIgnore={() => setMismatchPaused(false)}
         />
       )}
 

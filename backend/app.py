@@ -12,7 +12,7 @@ CORS(app)  # Enable CORS for React frontend cross-origin requests
 # Paths
 MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model.pkl")
 
-# Load model
+# Load regression model
 model = None
 if os.path.exists(MODEL_PATH):
     try:
@@ -23,6 +23,17 @@ if os.path.exists(MODEL_PATH):
         print(f"Error loading model: {e}")
 else:
     print(f"Model file not found at {MODEL_PATH}")
+
+# Load classifier
+CLASSIFIER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classifier.pkl")
+classifier = None
+if os.path.exists(CLASSIFIER_PATH):
+    try:
+        with open(CLASSIFIER_PATH, "rb") as f:
+            classifier = pickle.load(f)
+        print(f"Successfully loaded classifier from {CLASSIFIER_PATH}")
+    except Exception as e:
+        print(f"Error loading classifier: {e}")
 
 # Feature names expected by the model
 FEATURE_COLUMNS = ["exerciseType", "reps", "avg_speed", "range_of_motion", "duration_seconds", "weight_kg"]
@@ -110,11 +121,30 @@ def predict():
             "confidence": "Low",
             "uncertainty_driver": "Using MET-table fallback (pose model not loaded) — estimate is approximate",
             "is_fallback": True,
+            "detected_exercise": features.get("exercise_type", "unknown"),
+            "detection_confidence": 0.0
         })
 
-    # Prepare DataFrame and predict
+    # Prepare DataFrame for regression
     df = pd.DataFrame([features])[FEATURE_COLUMNS]
     
+    # Run Exercise Classifier
+    detected_exercise = exercise_str
+    detection_confidence = 0.0
+    if classifier is not None:
+        try:
+            clf_features = pd.DataFrame([{
+                'reps': features["reps"],
+                'avg_speed': features["avg_speed"],
+                'range_of_motion': features["range_of_motion"],
+                'duration_seconds': features["duration_seconds"]
+            }])
+            detected_exercise = classifier.predict(clf_features)[0]
+            proba = classifier.predict_proba(clf_features)[0]
+            detection_confidence = float(proba.max())
+        except Exception as e:
+            print(f"Classifier error: {e}")
+
     try:
         prediction = float(model.predict(df)[0])
         calories_low = round(prediction * (1 - spread_pct), 2)
@@ -126,6 +156,8 @@ def predict():
             "confidence": confidence_label,
             "uncertainty_driver": uncertainty_driver,
             "is_fallback": False,
+            "detected_exercise": detected_exercise,
+            "detection_confidence": detection_confidence
         })
     except Exception as e:
         return jsonify({"error": f"Prediction error: {e}"}), 500
@@ -144,6 +176,7 @@ def session():
         duration_seconds = float(data.get("duration_seconds", 0.0))
         weight_kg = float(data.get("weight_kg", 65.0))
         calories_burned = float(data.get("calories_burned", 0.0))
+        detected_exercise = data.get("detected_exercise", None)
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid field format: {e}"}), 400
         
@@ -154,7 +187,8 @@ def session():
         range_of_motion=range_of_motion,
         duration_seconds=duration_seconds,
         weight_kg=weight_kg,
-        calories_burned=calories_burned
+        calories_burned=calories_burned,
+        detected_exercise=detected_exercise
     )
     
     stats = get_stats()
