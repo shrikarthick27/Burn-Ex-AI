@@ -128,22 +128,48 @@ def predict():
     # Prepare DataFrame for regression
     df = pd.DataFrame([features])[FEATURE_COLUMNS]
     
-    # Run Exercise Classifier
+    # Exercise Detection via Biomechanics Rules
+    # Data-derived thresholds (from feature distribution analysis):
+    #   pull-up:       elbow_rom ~156°, knee_rom ~21°
+    #   push-up:       elbow_rom ~104°, knee_rom ~14°
+    #   russian twist: knee_rom ~38°, torso_rom ~42°
+    #   squat:         knee_rom ~92°, torso_rom ~96°
     detected_exercise = exercise_str
     detection_confidence = 0.0
-    if classifier is not None:
-        try:
-            clf_features = pd.DataFrame([{
-                'reps': features["reps"],
-                'avg_speed': features["avg_speed"],
-                'range_of_motion': features["range_of_motion"],
-                'duration_seconds': features["duration_seconds"]
-            }])
-            detected_exercise = classifier.predict(clf_features)[0]
-            proba = classifier.predict_proba(clf_features)[0]
-            detection_confidence = float(proba.max())
-        except Exception as e:
-            print(f"Classifier error: {e}")
+    try:
+        elbow_rom_val = float(data.get('elbow_rom', 0.0))
+        knee_rom_val  = float(data.get('knee_rom', 0.0))
+        torso_rom_val = float(data.get('torso_rom', 0.0))
+        total_rom = elbow_rom_val + knee_rom_val + torso_rom_val + 1e-6
+
+        # Only attempt detection if there's enough observable motion
+        if total_rom > 15.0:
+            # Compute per-joint activity fractions
+            elbow_frac = elbow_rom_val / total_rom
+            knee_frac  = knee_rom_val  / total_rom
+            torso_frac = torso_rom_val / total_rom
+
+            if knee_rom_val >= 55:
+                # Dominant knee+torso movement → squat
+                detected_exercise = "squat"
+                detection_confidence = min(0.95, 0.6 + (knee_rom_val - 55) / 100)
+            elif elbow_rom_val >= 130 and knee_frac < 0.25:
+                # Very large elbow ROM, knees nearly static → pull-up
+                detected_exercise = "pull Up"
+                detection_confidence = min(0.95, 0.6 + (elbow_rom_val - 130) / 100)
+            elif torso_rom_val >= 35 and knee_rom_val < 50:
+                # Large torso rotation with minor knee movement → russian twist
+                detected_exercise = "russian twist"
+                detection_confidence = min(0.90, 0.55 + (torso_rom_val - 35) / 80)
+            elif elbow_rom_val >= 40 and knee_frac < 0.3:
+                # Moderate-large elbow ROM, knees mostly static → push-up
+                detected_exercise = "push-up"
+                detection_confidence = min(0.90, 0.5 + (elbow_rom_val - 40) / 120)
+            else:
+                # Ambiguous — not enough data yet
+                detection_confidence = 0.2
+    except Exception as e:
+        print(f"Rule-based detection error: {e}")
 
     try:
         prediction = float(model.predict(df)[0])

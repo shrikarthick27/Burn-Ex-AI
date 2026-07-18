@@ -58,65 +58,69 @@ for file in os.listdir(cache_dir):
     frames = data["frames"]
     duration = len(frames) / fps
     
-    # We need a primary angle to track reps and ROM
-    angles = []
-    wrist_y = []
-    
+    # Track ALL joint angle series independently (for classifier robustness)
+    elbow_angles = []   # Shoulder(11) - Elbow(13) - Wrist(15)
+    knee_angles  = []   # Hip(23) - Knee(25) - Ankle(27)
+    torso_angles = []   # Shoulder(11) - Hip(23) - Knee(25)
+    wrist_y      = []
+
     for frame in frames:
-        if exercise == "squat":
-            # Hip (23), Knee (25), Ankle (27)
-            if 23 in frame and 25 in frame and 27 in frame:
-                angles.append(calculate_angle(frame[23], frame[25], frame[27]))
-        elif exercise in ["push-up", "pull Up"]:
-            # Shoulder (11), Elbow (13), Wrist (15)
-            if 11 in frame and 13 in frame and 15 in frame:
-                angles.append(calculate_angle(frame[11], frame[13], frame[15]))
-        elif exercise == "russian twist":
-            # Shoulder (11), Hip (23), Knee (25)
-            if 11 in frame and 23 in frame and 25 in frame:
-                angles.append(calculate_angle(frame[11], frame[23], frame[25]))
-        
+        if 11 in frame and 13 in frame and 15 in frame:
+            elbow_angles.append(calculate_angle(frame[11], frame[13], frame[15]))
+        if 23 in frame and 25 in frame and 27 in frame:
+            knee_angles.append(calculate_angle(frame[23], frame[25], frame[27]))
+        if 11 in frame and 23 in frame and 25 in frame:
+            torso_angles.append(calculate_angle(frame[11], frame[23], frame[25]))
         if 15 in frame:
             wrist_y.append(frame[15][1])
-            
-    if len(angles) < 5:
-        # Not enough data
+
+    # Primary angles for calorie features (exercise-specific)
+    if exercise == "squat":
+        primary_angles = np.array(knee_angles)
+    elif exercise in ["push-up", "pull Up"]:
+        primary_angles = np.array(elbow_angles)
+    else:  # russian twist
+        primary_angles = np.array(torso_angles)
+
+    if len(primary_angles) < 5:
         continue
-        
-    angles = np.array(angles)
-    
-    # 1. ROM
-    rom = np.max(angles) - np.min(angles)
-    
-    # 2. Reps (Peak detection)
-    # Smooth the signal slightly
-    smoothed = np.convolve(angles, np.ones(5)/5, mode='valid')
-    # Use negative for squats/pushups where angle drops during rep
+
+    # Joint-specific ROMs (key classifier discriminators)
+    elbow_rom = float(np.max(elbow_angles) - np.min(elbow_angles)) if len(elbow_angles) > 1 else 0.0
+    knee_rom  = float(np.max(knee_angles)  - np.min(knee_angles))  if len(knee_angles)  > 1 else 0.0
+    torso_rom = float(np.max(torso_angles) - np.min(torso_angles)) if len(torso_angles) > 1 else 0.0
+
+    # Primary ROM (for calorie model)
+    rom = float(np.max(primary_angles) - np.min(primary_angles))
+
+    # Reps (peak detection on primary signal)
+    smoothed = np.convolve(primary_angles, np.ones(5)/5, mode='valid')
     peaks, _ = find_peaks(-smoothed, distance=fps*0.5, prominence=15)
     reps = len(peaks)
-    
-    # 3. Avg Speed (normalized y movement per second)
+
+    # Avg Speed
     if len(wrist_y) > 1:
-        diffs = np.abs(np.diff(wrist_y))
-        avg_speed = np.mean(diffs) * fps
+        avg_speed = float(np.mean(np.abs(np.diff(wrist_y))) * fps)
     else:
         avg_speed = 0.0
-        
-    # Assign weight round-robin
+
+    # Weight round-robin
     weight = WEIGHT_BUCKETS[weight_idx % len(WEIGHT_BUCKETS)]
     weight_idx += 1
-    
-    # 4. Ground Truth Calories
-    # Calories = MET * weight_kg * duration_hours
+
+    # Ground Truth Calories
     calories_burned = MET_VALUES[exercise] * weight * (duration / 3600.0)
-    
+
     dataset.append({
-        "exercise_type": exercise,
-        "reps": reps,
-        "avg_speed": avg_speed,
+        "exercise_type":   exercise,
+        "reps":            reps,
+        "avg_speed":       avg_speed,
         "range_of_motion": rom,
+        "elbow_rom":       elbow_rom,
+        "knee_rom":        knee_rom,
+        "torso_rom":       torso_rom,
         "duration_seconds": duration,
-        "weight_kg": weight,
+        "weight_kg":       weight,
         "calories_burned": calories_burned
     })
 

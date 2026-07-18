@@ -1192,6 +1192,9 @@ export default function App() {
   const cameraRef = useRef(null);
   const anglesRef = useRef([]);
   const wristPositionsRef = useRef([]);
+  const elbowAnglesRef = useRef([]);   // Shoulder-Elbow-Wrist: 11-13-15
+  const kneeAnglesRef  = useRef([]);   // Hip-Knee-Ankle: 23-25-27
+  const torsoAnglesRef = useRef([]);   // Shoulder-Hip-Knee: 11-23-25
   const durationRef = useRef(0.0);
   const lastTimeRef = useRef(0);
   const consecutiveLostFramesRef = useRef(0);
@@ -1304,6 +1307,19 @@ export default function App() {
     const lm = results.poseLandmarks;
     if (showSkeletonRef.current) drawSkeleton(ctx, lm, canvas);
 
+    // Always track all 3 joint angles independently for exercise detection
+    const vis = (p) => p && p.visibility > 0.4;
+    if (vis(lm[11]) && vis(lm[13]) && vis(lm[15]))
+      elbowAnglesRef.current.push(calculateAngle(lm[11], lm[13], lm[15]));
+    if (vis(lm[23]) && vis(lm[25]) && vis(lm[27]))
+      kneeAnglesRef.current.push(calculateAngle(lm[23], lm[25], lm[27]));
+    if (vis(lm[11]) && vis(lm[23]) && vis(lm[25]))
+      torsoAnglesRef.current.push(calculateAngle(lm[11], lm[23], lm[25]));
+    // Cap to last 300 frames (~10s at 30fps) to avoid stale signal
+    if (elbowAnglesRef.current.length > 300) elbowAnglesRef.current.shift();
+    if (kneeAnglesRef.current.length  > 300) kneeAnglesRef.current.shift();
+    if (torsoAnglesRef.current.length > 300) torsoAnglesRef.current.shift();
+
     if (isActiveRef.current) {
       const now = performance.now();
       // Only tick duration if not mismatch-paused
@@ -1349,29 +1365,41 @@ export default function App() {
     });
   };
 
+  // Helper to compute ROM from angle array
+  const romOf = (arr) => arr.length > 1 ? Math.max(...arr) - Math.min(...arr) : 0;
+
   // Live calorie update + exercise mismatch detection
   useEffect(() => {
     let iv;
-    if (isActive && duration >= 30) {
+    if (isActive && duration >= 10) {
       iv = setInterval(async () => {
         try {
+          const elbowRom = romOf(elbowAnglesRef.current);
+          const kneeRom  = romOf(kneeAnglesRef.current);
+          const torsoRom = romOf(torsoAnglesRef.current);
           const r = await fetch("http://localhost:5000/api/predict", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ exercise_type: exercise, reps, avg_speed: avgSpeed, range_of_motion: rom, duration_seconds: duration, weight_kg: weight, tracking_quality: trackingQualityRef.current }),
+            body: JSON.stringify({
+              exercise_type: exercise,
+              reps, avg_speed: avgSpeed, range_of_motion: rom,
+              duration_seconds: duration, weight_kg: weight,
+              tracking_quality: trackingQualityRef.current,
+              elbow_rom: elbowRom, knee_rom: kneeRom, torso_rom: torsoRom,
+            }),
           });
           if (r.ok) {
             const d = await r.json();
-            // Only update calories if not currently paused on a mismatch
-            if (!mismatchPausedRef.current) {
+            // Only update calories after 30s threshold
+            if (duration >= 30 && !mismatchPausedRef.current) {
               setCalories(d.calories); setCaloriesLow(d.calories_low??d.calories); setCaloriesHigh(d.calories_high??d.calories);
               setConfidence(d.confidence??"Low"); setIsFallback(d.is_fallback||false);
             }
-            // Mismatch detection — requires >60% classifier confidence
+            // Mismatch detection — lower threshold (0.45) for earlier triggering
             const detected = d.detected_exercise;
             const confScore = d.detection_confidence ?? 0;
             setDetectedExercise(detected);
             setDetectionConfidence(confScore);
-            if (detected && confScore >= 0.6 && detected !== exercise) {
+            if (detected && confScore >= 0.45 && detected !== exercise) {
               setMismatchPaused(true);
             }
           }
@@ -1396,6 +1424,7 @@ export default function App() {
     setCaloriesLow(0); setCaloriesHigh(0); setConfidence("Low"); setIsFallback(false);
     setDetectedExercise(null); setDetectionConfidence(0); setMismatchPaused(false);
     anglesRef.current=[]; wristPositionsRef.current=[];
+    elbowAnglesRef.current=[]; kneeAnglesRef.current=[]; torsoAnglesRef.current=[];
     durationRef.current=0; lastTimeRef.current=performance.now();
     consecutiveLostFramesRef.current=0; setNoPoseWarning(false); recentFramesRef.current=[];
     setScreen("live");
