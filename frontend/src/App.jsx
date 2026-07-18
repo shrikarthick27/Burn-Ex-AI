@@ -15,12 +15,14 @@ import "./index.css";
 const EXERCISE_JOINT_MAP = {
   squat:       [23, 25, 27],
   pushup:      [11, 13, 15],
+  pullup:      [11, 13, 15],
+  russiantwist:[11, 23, 25],
   jumpingjack: [23, 11, 13],
   march:       [23, 25, 27],
   burpee:      [23, 25, 27],
 };
-const MET_VALUES   = { squat: 3.5, pushup: 8.0, jumpingjack: 8.0, march: 3.5, burpee: 10.0 };
-const EXERCISE_LABELS = { squat: "Squats", pushup: "Push-Ups", jumpingjack: "Jumping Jacks", march: "Marching", burpee: "Burpees" };
+const MET_VALUES   = { squat: 3.5, pushup: 8.0, pullup: 8.0, russiantwist: 5.0, jumpingjack: 8.0, march: 3.5, burpee: 10.0 };
+const EXERCISE_LABELS = { squat: "Squats", pushup: "Push-Ups", pullup: "Pull-Ups", russiantwist: "Russian Twists", jumpingjack: "Jumping Jacks", march: "Marching", burpee: "Burpees" };
 
 // ── The Ember companion ────────────────────────────────────────────────────
 const AVATARS = [
@@ -1395,13 +1397,13 @@ export default function App() {
             detected = "squat";
             conf = Math.min(0.95, 0.6 + (kneeRom - 40) / 100);
           } else if (elbowRom >= 100 && kneeFrac < 0.25) { // lowered from 130
-            detected = "pull Up";
+            detected = "pullup";
             conf = Math.min(0.95, 0.6 + (elbowRom - 100) / 100);
           } else if (torsoRom >= 30 && kneeRom < 50) {
-            detected = "russian twist";
+            detected = "russiantwist";
             conf = Math.min(0.90, 0.55 + (torsoRom - 30) / 80);
           } else if (elbowRom >= 30 && kneeFrac < 0.4) { // lowered from 40
-            detected = "push-up";
+            detected = "pushup";
             conf = Math.min(0.90, 0.5 + (elbowRom - 30) / 120);
           }
         }
