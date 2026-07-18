@@ -1307,14 +1307,22 @@ export default function App() {
     const lm = results.poseLandmarks;
     if (showSkeletonRef.current) drawSkeleton(ctx, lm, canvas);
 
-    // Always track all 3 joint angles independently for exercise detection
+    // Track both left and right sides to avoid occlusion issues
     const vis = (p) => p && p.visibility > 0.4;
-    if (vis(lm[11]) && vis(lm[13]) && vis(lm[15]))
-      elbowAnglesRef.current.push(calculateAngle(lm[11], lm[13], lm[15]));
-    if (vis(lm[23]) && vis(lm[25]) && vis(lm[27]))
-      kneeAnglesRef.current.push(calculateAngle(lm[23], lm[25], lm[27]));
-    if (vis(lm[11]) && vis(lm[23]) && vis(lm[25]))
-      torsoAnglesRef.current.push(calculateAngle(lm[11], lm[23], lm[25]));
+    const ang = (i,j,k) => (vis(lm[i])&&vis(lm[j])&&vis(lm[k])) ? calculateAngle(lm[i],lm[j],lm[k]) : null;
+    
+    // Elbows: Left(11,13,15), Right(12,14,16)
+    const eL = ang(11,13,15), eR = ang(12,14,16);
+    if (eL || eR) elbowAnglesRef.current.push(eL || eR);
+    
+    // Knees: Left(23,25,27), Right(24,26,28)
+    const kL = ang(23,25,27), kR = ang(24,26,28);
+    if (kL || kR) kneeAnglesRef.current.push(kL || kR);
+
+    // Torso: Left(11,23,25), Right(12,24,26)
+    const tL = ang(11,23,25), tR = ang(12,24,26);
+    if (tL || tR) torsoAnglesRef.current.push(tL || tR);
+
     // Cap to last 300 frames (~10s at 30fps) to avoid stale signal
     if (elbowAnglesRef.current.length > 300) elbowAnglesRef.current.shift();
     if (kneeAnglesRef.current.length  > 300) kneeAnglesRef.current.shift();
@@ -1368,43 +1376,63 @@ export default function App() {
   // Helper to compute ROM from angle array
   const romOf = (arr) => arr.length > 1 ? Math.max(...arr) - Math.min(...arr) : 0;
 
-  // Live calorie update + exercise mismatch detection
+  // Instant exercise mismatch detection in frontend (runs continuously)
   useEffect(() => {
-    let iv;
-    if (isActive && duration >= 10) {
+    let iv = null;
+    if (isActive) {
       iv = setInterval(async () => {
-        try {
-          const elbowRom = romOf(elbowAnglesRef.current);
-          const kneeRom  = romOf(kneeAnglesRef.current);
-          const torsoRom = romOf(torsoAnglesRef.current);
-          const r = await fetch("http://localhost:5000/api/predict", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              exercise_type: exercise,
-              reps, avg_speed: avgSpeed, range_of_motion: rom,
-              duration_seconds: duration, weight_kg: weight,
-              tracking_quality: trackingQualityRef.current,
-              elbow_rom: elbowRom, knee_rom: kneeRom, torso_rom: torsoRom,
-            }),
-          });
-          if (r.ok) {
-            const d = await r.json();
-            // Only update calories after 30s threshold
-            if (duration >= 30 && !mismatchPausedRef.current) {
+        const elbowRom = romOf(elbowAnglesRef.current);
+        const kneeRom  = romOf(kneeAnglesRef.current);
+        const torsoRom = romOf(torsoAnglesRef.current);
+        const totalRom = elbowRom + kneeRom + torsoRom + 1e-6;
+
+        let detected = null;
+        let conf = 0;
+
+        if (totalRom > 15.0) {
+          const kneeFrac = kneeRom / totalRom;
+          if (kneeRom >= 40) { // lowered from 55 for easier detection
+            detected = "squat";
+            conf = Math.min(0.95, 0.6 + (kneeRom - 40) / 100);
+          } else if (elbowRom >= 100 && kneeFrac < 0.25) { // lowered from 130
+            detected = "pull Up";
+            conf = Math.min(0.95, 0.6 + (elbowRom - 100) / 100);
+          } else if (torsoRom >= 30 && kneeRom < 50) {
+            detected = "russian twist";
+            conf = Math.min(0.90, 0.55 + (torsoRom - 30) / 80);
+          } else if (elbowRom >= 30 && kneeFrac < 0.4) { // lowered from 40
+            detected = "push-up";
+            conf = Math.min(0.90, 0.5 + (elbowRom - 30) / 120);
+          }
+        }
+
+        // Only trigger mismatch if confidence is high enough and it doesn't match selection
+        if (detected && conf >= 0.45 && detected !== exercise) {
+          setDetectedExercise(detected);
+          setDetectionConfidence(conf);
+          setMismatchPaused(true);
+        }
+
+        // Live calorie update (only after 30s)
+        if (duration >= 30 && !mismatchPausedRef.current) {
+          try {
+            const r = await fetch("http://localhost:5000/api/predict", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                exercise_type: exercise,
+                reps, avg_speed: avgSpeed, range_of_motion: rom,
+                duration_seconds: duration, weight_kg: weight,
+                tracking_quality: trackingQualityRef.current
+              }),
+            });
+            if (r.ok) {
+              const d = await r.json();
               setCalories(d.calories); setCaloriesLow(d.calories_low??d.calories); setCaloriesHigh(d.calories_high??d.calories);
               setConfidence(d.confidence??"Low"); setIsFallback(d.is_fallback||false);
             }
-            // Mismatch detection — lower threshold (0.45) for earlier triggering
-            const detected = d.detected_exercise;
-            const confScore = d.detection_confidence ?? 0;
-            setDetectedExercise(detected);
-            setDetectionConfidence(confScore);
-            if (detected && confScore >= 0.45 && detected !== exercise) {
-              setMismatchPaused(true);
-            }
-          }
-        } catch { }
-      }, 3000);
+          } catch { }
+        }
+      }, 1000); // Check every second!
     }
     return () => clearInterval(iv);
   }, [isActive, duration, reps, avgSpeed, rom, weight, exercise]);
@@ -1532,7 +1560,14 @@ export default function App() {
           mismatchPaused={mismatchPaused}
           detectedExercise={detectedExercise}
           detectionConfidence={detectionConfidence}
-          onMismatchSwitch={(ex) => { setExercise(ex); setMismatchPaused(false); }}
+          onMismatchSwitch={(ex) => { 
+            setExercise(ex);
+            anglesRef.current=[];
+            wristPositionsRef.current=[];
+            setReps(0);
+            setRom(0);
+            setMismatchPaused(false); 
+          }}
           onMismatchIgnore={() => setMismatchPaused(false)}
         />
       )}
